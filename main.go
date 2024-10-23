@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	port = "8080"
+	port = "8082"
 )
 
 type Push struct {
@@ -45,7 +45,12 @@ type Branch struct {
 }
 
 func getPush(p *Push) string {
-	return fmt.Sprintf("> ## `Commit`\\n> \\n> **User**: [`%s`](%s)\\n> **Commit**: [`%s`](%s)\\n> **Branch**:  `%s`\\n> **Date**: `%s`",
+	return fmt.Sprintf("> ## `🚀 Push`\\n> \\n> **👤 User**: [`%s`](%s)\\n> **✉️ Commit**: [`%s`](%s)\\n> ** 🎋 Branch**:  `%s`\\n> **📅 Date**: `%s`",
+		p.user, p.userURL, p.commitMessage, p.commitUrl, p.branchName, p.time)
+}
+
+func getPushSlack(p *Push) string {
+	return fmt.Sprintf("> `🚀 Push`\\n> \\n> *👤 User*: [`%s`](%s)\\n> *✉️ Commit*: [`%s`](%s)\\n> * 🎋 Branch*:  `%s`\\n> *📅 Date*: `%s`",
 		p.user, p.userURL, p.commitMessage, p.commitUrl, p.branchName, p.time)
 }
 
@@ -59,13 +64,35 @@ func getBranch(b *Branch) string {
 		b.action, b.author, b.authorUrl, b.name, b.description, b.createdTime)
 }
 
-func sendToDiscord(body string) {
+func sendToSlack(channelID string, text string) {
+    botToken := "Bearer " + os.Getenv("SLACK_BOT_TOKEN")
+    url := "https://slack.com/api/chat.postMessage"
+    method := "POST"
+    
+    b := fmt.Sprintf("{\"channel\": \"%s\",\"text\": \"%s\"}", channelID, text)
+    payload := strings.NewReader(b)
+    client := &http.Client{}
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", botToken)
+	res, err := client.Do(req)
+	defer res.Body.Close()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func sendToDiscord(content string) {
 	botToken := "Bot " + os.Getenv("DISCORD_BOT_TOKEN")
-	fmt.Println(botToken)
-	url := "https://discord.com/api/channels/1290928675688026176/messages"
+	url := "https://discord.com/api/channels/1291527142902993047/messages"
 	method := "POST"
 
-	b := fmt.Sprintf("{\"content\": \"%s\"}", body)
+	b := fmt.Sprintf("{\"content\": \"%s\"}", content)
 	fmt.Println(b)
 	payload := strings.NewReader(b)
 	client := &http.Client{}
@@ -79,18 +106,11 @@ func sendToDiscord(body string) {
 	req.Header.Add("Authorization", botToken)
 
 	res, err := client.Do(req)
-	fmt.Println("\n\n\n")
-	test, e := io.ReadAll(res.Body)
-	if e != nil {
-		fmt.Println(e)
-	}
-	fmt.Println(string(test[:]))
+	defer res.Body.Close()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(res.StatusCode)
-	res.Body.Close()
 }
 
 func createPush(body string) *Push {
@@ -121,32 +141,50 @@ func createPush(body string) *Push {
 	}
 }
 
-func handler(w http.ResponseWriter, req *http.Request) {
-	action := req.Header.Get("X-GitHub-Event")
-	b, err := io.ReadAll(req.Body)
-	if err != nil {
-		// TODO: coulnd't read body
-	}
-	body := string(b[:])
-
-	if action == "" {
-		// TODO: log here
-	}
-	switch action {
-	case "push":
-		sendToDiscord(getPush(createPush(body)))
-	}
-}
-
 func jsonToMap(jsonStr string) map[string]interface{} {
 	result := make(map[string]interface{})
 	json.Unmarshal([]byte(jsonStr), &result)
 	return result
 }
 
+func handlerGit(w http.ResponseWriter, req *http.Request) {
+	action := req.Header.Get("X-GitHub-Event")
+	b, err := io.ReadAll(req.Body)
+	if err != nil {
+		// TODO: coulnd't read body
+	}
+
+	body := string(b[:])
+	if action == "" {
+		// TODO: log here
+	}
+	switch action {
+	case "push":
+		sendToDiscord(getPush(createPush(body)))
+		sendToSlack("C07S8SZKHT9", getPushSlack(createPush(body)))
+	}
+}
+
+func handlerSlack(w http.ResponseWriter, req *http.Request) {
+	b, err := io.ReadAll(req.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	body := string(b[:])
+
+	bodyMap := jsonToMap(body)
+	event := bodyMap["event"].((map[string]any))
+	text := event["text"].(string)
+	fmt.Println(text)
+	sendToDiscord(text)
+	fmt.Fprint(w, text)
+}
+
 func main() {
 
 	fmt.Println("Listening on port " + port)
-	http.HandleFunc("/github", handler)
+	http.HandleFunc("/github", handlerGit)
+	http.HandleFunc("/slack", handlerSlack)
 	http.ListenAndServe(":"+port, nil)
 }
