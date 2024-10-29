@@ -147,12 +147,23 @@ func jsonToMap(jsonStr string) map[string]interface{} {
 	return result
 }
 
+func h(req *http.Request) {
+    // Access all headers
+    for name, values := range req.Header {
+        // Iterate over all values for the header key
+        for _, value := range values {
+            fmt.Printf("%s: %s\n", name, value)
+        }
+    }
+}
+
 func handlerGit(w http.ResponseWriter, req *http.Request) {
 	action := req.Header.Get("X-GitHub-Event")
 	b, err := io.ReadAll(req.Body)
 	if err != nil {
 		// TODO: coulnd't read body
 	}
+	h(req)
 
 	body := string(b[:])
 	if action == "" {
@@ -184,7 +195,7 @@ func handlerSlack(w http.ResponseWriter, req *http.Request) {
 func main() {
 
 	fmt.Println("Listening on port " + port)
-	http.HandleFunc("/github", handlerGit)
+	http.HandleFunc("/github/event", handlerGit)
 	http.HandleFunc("/slack", handlerSlack)
 	http.ListenAndServe(":"+port, nil)
 }
