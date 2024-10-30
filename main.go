@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,13 +66,13 @@ func getBranch(b *Branch) string {
 }
 
 func sendToSlack(channelID string, text string) {
-    botToken := "Bearer " + os.Getenv("SLACK_BOT_TOKEN")
-    url := "https://slack.com/api/chat.postMessage"
-    method := "POST"
-    
-    b := fmt.Sprintf("{\"channel\": \"%s\",\"text\": \"%s\"}", channelID, text)
-    payload := strings.NewReader(b)
-    client := &http.Client{}
+	botToken := "Bearer " + os.Getenv("SLACK_BOT_TOKEN")
+	url := "https://slack.com/api/chat.postMessage"
+	method := "POST"
+
+	b := fmt.Sprintf("{\"channel\": \"%s\",\"text\": \"%s\"}", channelID, text)
+	payload := strings.NewReader(b)
+	client := &http.Client{}
 	req, err := http.NewRequest(method, url, payload)
 	if err != nil {
 		fmt.Println(err)
@@ -148,13 +149,13 @@ func jsonToMap(jsonStr string) map[string]interface{} {
 }
 
 func h(req *http.Request) {
-    // Access all headers
-    for name, values := range req.Header {
-        // Iterate over all values for the header key
-        for _, value := range values {
-            fmt.Printf("%s: %s\n", name, value)
-        }
-    }
+	// Access all headers
+	for name, values := range req.Header {
+		// Iterate over all values for the header key
+		for _, value := range values {
+			fmt.Printf("%s: %s\n", name, value)
+		}
+	}
 }
 
 func handlerGit(w http.ResponseWriter, req *http.Request) {
@@ -190,6 +191,60 @@ func handlerSlack(w http.ResponseWriter, req *http.Request) {
 	fmt.Println(text)
 	sendToDiscord(text)
 	fmt.Fprint(w, text)
+}
+
+type PayloadHookGithub struct {
+	Name   string            `json:"name"`
+	Active bool              `json:"active"`
+	Events []string          `json:"events"`
+	Config map[string]string `json:"config"`
+}
+
+func CreateWebHook(token string, author string, repoName string, events []string) {
+    // Correct URL with slash between repos and author
+    url := "https://api.github.com/repos/" + author + "/" + repoName + "/hooks"
+
+    // Initialize config map
+    config := make(map[string]string)
+    config["url"] = "https://zeb.com"
+    config["content_type"] = "json"
+    config["insecure_ssl"] = "1"
+
+    payload := PayloadHookGithub{
+        Name:   "web",
+        Active: true,
+        Events: events,
+        Config: config,
+    }
+
+    pBytes, err := json.Marshal(payload)
+    if err != nil {
+        panic(err)
+    }
+    requestBody := bytes.NewBuffer(pBytes)
+
+    req, err := http.NewRequest("POST", url, requestBody)
+    if err != nil {
+        panic(err)
+    }
+
+    // Set headers
+    req.Header.Add("Accept", "application/vnd.github+json")
+    req.Header.Add("Authorization", "Bearer "+token)
+    req.Header.Add("X-GitHub-Api-Version", "2022-11-28")
+    req.Header.Add("Content-Type", "application/json")
+
+    // Make HTTP request
+    client := &http.Client{}
+    res, err := client.Do(req)
+    if err != nil {
+        fmt.Println("Error making request:", err)
+        return
+    }
+    defer res.Body.Close()
+
+    // Optional: Print the response status
+    fmt.Println("Response Status:", res.Status)
 }
 
 func main() {
